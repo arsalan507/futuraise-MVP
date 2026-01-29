@@ -1,0 +1,105 @@
+# FuturAIse MVP - Docker Compose with Non-Conflicting Ports
+# Uses different external ports to avoid conflicts with existing services
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: supabase/postgres:15.1.0.147
+    container_name: postgres-u4wk00sgok0c08cg8ssg4g0g
+    ports:
+      - "54320:5432"  # Changed from 5432 to 54320 externally
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: postgres
+      POSTGRES_USER: postgres
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # PostgREST API
+  postgrest:
+    image: postgrest/postgrest:v11.2.2
+    container_name: postgrest-u4wk00sgok0c08cg8ssg4g0g
+    ports:
+      - "3100:3000"  # Changed from 3000 to 3100 externally
+    environment:
+      PGRST_DB_URI: postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/postgres
+      PGRST_DB_SCHEMAS: public,storage
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_JWT_SECRET: ${JWT_SECRET}
+      PGRST_DB_USE_LEGACY_GUCS: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Supabase Auth (GoTrue)
+  auth:
+    image: supabase/gotrue:v2.99.0
+    container_name: auth-u4wk00sgok0c08cg8ssg4g0g
+    ports:
+      - "9998:9999"  # Changed from 9999 to 9998 externally
+    environment:
+      GOTRUE_API_HOST: 0.0.0.0
+      GOTRUE_API_PORT: 9999
+      API_EXTERNAL_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:8000}
+      GOTRUE_DB_DRIVER: postgres
+      GOTRUE_DB_DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/postgres
+      GOTRUE_SITE_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:8000}
+      GOTRUE_URI_ALLOW_LIST: "*"
+      GOTRUE_DISABLE_SIGNUP: false
+      GOTRUE_JWT_SECRET: ${JWT_SECRET}
+      GOTRUE_JWT_EXP: 3600
+      GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Supabase Realtime
+  realtime:
+    image: supabase/realtime:v2.25.35
+    container_name: realtime-u4wk00sgok0c08cg8ssg4g0g
+    ports:
+      - "4001:4000"  # Changed from 4000 to 4001 externally
+    environment:
+      PORT: 4000
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_NAME: postgres
+      DB_AFTER_CONNECT_QUERY: 'SET search_path TO _realtime'
+      DB_ENC_KEY: supabaserealtime
+      API_JWT_SECRET: ${JWT_SECRET}
+      SECRET_KEY_BASE: ${JWT_SECRET}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Supabase Studio (Admin UI)
+  studio:
+    image: supabase/studio:20231123-64a766a
+    container_name: studio-u4wk00sgok0c08cg8ssg4g0g
+    ports:
+      - "3001:3000"  # Keep 3001 as is
+    environment:
+      SUPABASE_URL: http://postgrest:3000
+      SUPABASE_REST_URL: http://postgrest:3000
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY:-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    depends_on:
+      - postgres
+      - postgrest
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+    driver: local
