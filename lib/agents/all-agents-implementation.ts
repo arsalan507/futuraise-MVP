@@ -45,9 +45,7 @@ export class InternalEmotionalAgent {
 
 // AGENT 05: Internal Psychological Agent
 export class InternalPsychologicalAgent {
-  async analyzeDe
-
-cisionQuality(decisions: any[]): Promise<AgentResponse> {
+  async analyzeDecisionQuality(decisions: any[]): Promise<AgentResponse> {
     return {
       success: true,
       data: {

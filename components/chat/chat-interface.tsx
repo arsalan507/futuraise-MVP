@@ -165,7 +165,7 @@ export function ChatInterface({ studentId, checkpoint, onMessageSent }: ChatInte
               </p>
             </div>
           </div>
-        )))}
+        ))}
 
         {isLoading && (
           <div className="flex justify-start">
