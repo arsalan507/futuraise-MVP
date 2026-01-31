@@ -2,7 +2,6 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
@@ -24,59 +23,32 @@ export default function SignupPage() {
     setLoading(true)
     setError(null)
 
-    // Check if Supabase is configured
-    if (!process.env.NEXT_PUBLIC_SUPABASE_URL ||
-        process.env.NEXT_PUBLIC_SUPABASE_URL.includes('your_supabase')) {
-      setError('⚠️ Supabase not configured. Please set up your .env.local file with real credentials.')
-      setLoading(false)
-      return
-    }
-
     try {
-      const supabase = createClient()
-
-      // Sign up user
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: formData.email,
-        password: formData.password,
-        options: {
-          data: {
-            name: formData.name,
-            grade: formData.grade ? parseInt(formData.grade) : null
-          }
-        }
+      const response = await fetch('/api/auth/signup', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: formData.email,
+          password: formData.password,
+          name: formData.name,
+          grade: formData.grade ? parseInt(formData.grade) : null
+        }),
       })
 
-      if (authError) throw authError
+      const data = await response.json()
 
-      if (authData.user) {
-        // Create student record
-        const { error: studentError } = await supabase
-          .from('students')
-          .insert({
-            user_id: authData.user.id,
-            name: formData.name,
-            grade: formData.grade ? parseInt(formData.grade) : null,
-            current_checkpoint: 'welcome',
-            created_at: new Date().toISOString()
-          })
-
-        if (studentError) {
-          console.error('Error creating student:', studentError)
-        }
-
-        // Initialize first checkpoint
-        await supabase
-          .from('checkpoint_progress')
-          .insert({
-            student_id: authData.user.id,
-            checkpoint_name: 'welcome',
-            status: 'in_progress',
-            started_at: new Date().toISOString()
-          })
-
-        router.push('/student/dashboard')
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to create account')
       }
+
+      // Store token and user info
+      localStorage.setItem('authToken', data.token)
+      localStorage.setItem('user', JSON.stringify(data.user))
+
+      // Redirect to dashboard
+      router.push('/student/dashboard')
     } catch (err: any) {
       setError(err.message || 'An error occurred during signup')
     } finally {
@@ -99,19 +71,6 @@ export default function SignupPage() {
         </CardHeader>
 
         <CardContent>
-          {(!process.env.NEXT_PUBLIC_SUPABASE_URL ||
-            process.env.NEXT_PUBLIC_SUPABASE_URL.includes('your_supabase')) && (
-            <div className="mb-4 bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-3 rounded-lg text-sm">
-              <strong>⚠️ Demo Mode</strong>
-              <p className="mt-1">Supabase not configured. To use signup:</p>
-              <ol className="mt-2 ml-4 list-decimal text-xs">
-                <li>Set up Supabase account</li>
-                <li>Update .env.local with your keys</li>
-                <li>Restart server</li>
-              </ol>
-            </div>
-          )}
-
           <form onSubmit={handleSignup} className="space-y-4">
             {error && (
               <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">

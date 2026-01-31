@@ -3,7 +3,6 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
@@ -20,27 +19,27 @@ export default function LoginPage() {
     setIsLoading(true)
     setError(null)
 
-    // Check if Supabase is configured
-    if (!process.env.NEXT_PUBLIC_SUPABASE_URL ||
-        process.env.NEXT_PUBLIC_SUPABASE_URL.includes('your_supabase')) {
-      setError('⚠️ Supabase not configured. Please set up your .env.local file with real credentials.')
-      setIsLoading(false)
-      return
-    }
-
     try {
-      const supabase = createClient()
-
-      const { data, error: authError } = await supabase.auth.signInWithPassword({
-        email,
-        password,
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email, password }),
       })
 
-      if (authError) throw authError
+      const data = await response.json()
 
-      if (data.user) {
-        router.push('/student/dashboard')
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to login')
       }
+
+      // Store token and user info
+      localStorage.setItem('authToken', data.token)
+      localStorage.setItem('user', JSON.stringify(data.user))
+
+      // Redirect to dashboard
+      router.push('/student/dashboard')
     } catch (err: any) {
       setError(err.message || 'An error occurred during login')
     } finally {
@@ -60,19 +59,6 @@ export default function LoginPage() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {(!process.env.NEXT_PUBLIC_SUPABASE_URL ||
-            process.env.NEXT_PUBLIC_SUPABASE_URL.includes('your_supabase')) && (
-            <div className="mb-4 bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-3 rounded-lg text-sm">
-              <strong>⚠️ Demo Mode</strong>
-              <p className="mt-1">Supabase not configured. To use login:</p>
-              <ol className="mt-2 ml-4 list-decimal text-xs">
-                <li>Set up Supabase account</li>
-                <li>Update .env.local with your keys</li>
-                <li>Restart server</li>
-              </ol>
-            </div>
-          )}
-
           <form onSubmit={handleLogin} className="space-y-4">
             {error && (
               <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
