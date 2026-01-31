@@ -1,5 +1,7 @@
-import { createClient } from '@/lib/supabase/server'
-import { redirect } from 'next/navigation'
+'use client'
+
+import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { ChatInterface } from '@/components/chat/chat-interface'
 import { ProgressTracker } from '@/components/dashboard/progress-tracker'
 import { StatsCard } from '@/components/dashboard/stats-card'
@@ -8,24 +10,99 @@ import { Button } from '@/components/ui/button'
 import { calculateProgress, getCurrentWeek } from '@/lib/checkpoints/checkpoint-manager'
 import { Target, Lightbulb, Wrench } from 'lucide-react'
 
-export default async function StudentDashboard() {
-  const supabase = await createClient()
+interface Student {
+  id: string
+  user_id: string
+  name: string
+  email: string
+  grade: number
+  current_checkpoint: string
+  target_person: string | null
+  problem_statement: string | null
+  problem_description: string | null
+  solution_type: string | null
+  primary_tool: string | null
+  tools_used: string[] | null
+  build_progress: string | null
+  created_at: string
+  updated_at: string
+}
 
-  // Check auth
-  const { data: { user }, error: authError } = await supabase.auth.getUser()
-  if (authError || !user) {
-    redirect('/auth/login')
+export default function StudentDashboard() {
+  const router = useRouter()
+  const [student, setStudent] = useState<Student | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    const fetchStudentData = async () => {
+      try {
+        // Check if user is authenticated
+        const token = localStorage.getItem('authToken')
+        if (!token) {
+          router.push('/auth/login')
+          return
+        }
+
+        // Fetch student data
+        const response = await fetch('/api/student/me', {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
+        })
+
+        if (!response.ok) {
+          if (response.status === 401) {
+            // Token invalid or expired
+            localStorage.removeItem('authToken')
+            localStorage.removeItem('user')
+            router.push('/auth/login')
+            return
+          }
+          throw new Error('Failed to load student data')
+        }
+
+        const data = await response.json()
+        setStudent(data.student)
+      } catch (err: any) {
+        setError(err.message || 'An error occurred')
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchStudentData()
+  }, [router])
+
+  const handleSignOut = () => {
+    localStorage.removeItem('authToken')
+    localStorage.removeItem('user')
+    router.push('/auth/login')
   }
 
-  // Get student data
-  const { data: student, error: studentError } = await supabase
-    .from('students')
-    .select('*')
-    .eq('user_id', user.id)
-    .single()
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-4xl mb-4">⏳</div>
+          <p className="text-gray-600">Loading your dashboard...</p>
+        </div>
+      </div>
+    )
+  }
 
-  if (studentError || !student) {
-    redirect('/auth/signup')
+  if (error || !student) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-4xl mb-4">❌</div>
+          <p className="text-gray-600 mb-4">{error || 'Failed to load dashboard'}</p>
+          <Button onClick={() => router.push('/auth/login')}>
+            Back to Login
+          </Button>
+        </div>
+      </div>
+    )
   }
 
   // Calculate stats
@@ -51,9 +128,9 @@ export default async function StudentDashboard() {
                 <div className="text-2xl">🔥</div>
                 <span className="font-semibold">{daysActive} day streak</span>
               </div>
-              <form action="/api/auth/signout" method="post">
-                <Button variant="ghost" type="submit">Sign Out</Button>
-              </form>
+              <Button variant="ghost" onClick={handleSignOut}>
+                Sign Out
+              </Button>
             </div>
           </div>
         </div>

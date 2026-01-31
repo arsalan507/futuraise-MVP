@@ -371,7 +371,6 @@ CREATE VIEW student_progress_summary AS
 SELECT
   s.id,
   s.name,
-  s.current_week,
   s.current_checkpoint,
   COUNT(DISTINCT c.id) FILTER (WHERE c.status = 'completed') as completed_checkpoints,
   COUNT(DISTINCT c.id) as total_checkpoints,
@@ -387,7 +386,7 @@ FROM students s
 LEFT JOIN checkpoints c ON s.id = c.student_id
 LEFT JOIN projects p ON s.id = p.student_id
 LEFT JOIN events e ON s.id = e.student_id
-GROUP BY s.id, s.name, s.current_week, s.current_checkpoint, p.status, p.title;
+GROUP BY s.id, s.name, s.current_checkpoint, p.status, p.title;
 
 -- View: Daily Active Users
 CREATE VIEW daily_active_users AS
