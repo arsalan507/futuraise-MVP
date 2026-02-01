@@ -33,27 +33,41 @@ export default function StudentDashboard() {
   const [student, setStudent] = useState<Student | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [mounted, setMounted] = useState(false)
 
   useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  useEffect(() => {
+    if (!mounted) return
+
     const fetchStudentData = async () => {
       try {
         // Check if user is authenticated
         const token = localStorage.getItem('authToken')
+        console.log('Token from localStorage:', token ? 'EXISTS' : 'MISSING')
+
         if (!token) {
+          console.log('No token found, redirecting to login')
           router.push('/auth/login')
           return
         }
 
         // Fetch student data
+        console.log('Fetching student data from /api/student/me')
         const response = await fetch('/api/student/me', {
           headers: {
             'Authorization': `Bearer ${token}`,
           },
         })
 
+        console.log('API response status:', response.status)
+
         if (!response.ok) {
           if (response.status === 401) {
             // Token invalid or expired
+            console.log('401 Unauthorized - clearing token and redirecting')
             localStorage.removeItem('authToken')
             localStorage.removeItem('user')
             router.push('/auth/login')
@@ -63,8 +77,10 @@ export default function StudentDashboard() {
         }
 
         const data = await response.json()
+        console.log('Student data loaded:', data.student)
         setStudent(data.student)
       } catch (err: any) {
+        console.error('Error loading student data:', err)
         setError(err.message || 'An error occurred')
       } finally {
         setLoading(false)
@@ -72,7 +88,7 @@ export default function StudentDashboard() {
     }
 
     fetchStudentData()
-  }, [router])
+  }, [router, mounted])
 
   const handleSignOut = () => {
     localStorage.removeItem('authToken')
