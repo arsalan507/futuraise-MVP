@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import jwt from 'jsonwebtoken'
 import { query } from '@/lib/db'
 import { chatWithMax, type StudentContext, type Message } from '@/lib/claude/chat-service'
+import { getNextCheckpoint } from '@/lib/checkpoints/checkpoint-manager'
 
 const JWT_SECRET = process.env.JWT_SECRET || 'futuraise-secret-key-change-in-production'
 
@@ -158,11 +159,113 @@ export async function POST(request: NextRequest) {
     )
     console.log('[CHAT API] Event logged')
 
+    // Handle checkpoint advancement
+    let checkpointAdvanced = false
+    let newCheckpoint = null
+
+    if (response.shouldAdvanceCheckpoint) {
+      const nextCheckpoint = getNextCheckpoint(student.current_checkpoint)
+
+      if (nextCheckpoint) {
+        console.log('[CHAT API] Advancing checkpoint:', {
+          from: student.current_checkpoint,
+          to: nextCheckpoint.name
+        })
+
+        // Update student's current checkpoint
+        await query(
+          `UPDATE students
+           SET current_checkpoint = $1, updated_at = NOW()
+           WHERE id = $2`,
+          [nextCheckpoint.name, student.id]
+        )
+
+        // Save extracted data to student record
+        if (response.extractedData) {
+          const updates: string[] = []
+          const values: any[] = []
+          let paramIndex = 1
+
+          if (response.extractedData.targetPerson) {
+            updates.push(`target_person = $${paramIndex++}`)
+            values.push(response.extractedData.targetPerson)
+          }
+          if (response.extractedData.problemDescription) {
+            updates.push(`problem_description = $${paramIndex++}`)
+            values.push(response.extractedData.problemDescription)
+          }
+          if (response.extractedData.problemStatement) {
+            updates.push(`problem_statement = $${paramIndex++}`)
+            values.push(response.extractedData.problemStatement)
+          }
+          if (response.extractedData.solutionType) {
+            updates.push(`solution_type = $${paramIndex++}`)
+            values.push(response.extractedData.solutionType)
+          }
+          if (response.extractedData.primaryTool) {
+            updates.push(`primary_tool = $${paramIndex++}`)
+            values.push(response.extractedData.primaryTool)
+          }
+
+          if (updates.length > 0) {
+            values.push(student.id)
+            await query(
+              `UPDATE students
+               SET ${updates.join(', ')}, updated_at = NOW()
+               WHERE id = $${paramIndex}`,
+              values
+            )
+            console.log('[CHAT API] Saved extracted data:', response.extractedData)
+          }
+        }
+
+        // Create or update project if solution was designed
+        if (nextCheckpoint.name === 'building_started' && response.extractedData) {
+          await query(
+            `INSERT INTO projects (student_id, title, problem_statement, problem_description, target_person, solution_type, primary_tool, status)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+             ON CONFLICT (student_id)
+             DO UPDATE SET
+               problem_statement = EXCLUDED.problem_statement,
+               solution_type = EXCLUDED.solution_type,
+               primary_tool = EXCLUDED.primary_tool,
+               updated_at = NOW()`,
+            [
+              student.id,
+              `AI Solution for ${student.target_person || 'someone'}`,
+              student.problem_statement || response.extractedData.problemStatement,
+              student.problem_description || response.extractedData.problemDescription,
+              student.target_person || response.extractedData.targetPerson,
+              response.extractedData.solutionType || student.solution_type,
+              response.extractedData.primaryTool || student.primary_tool,
+              'in_progress'
+            ]
+          )
+          console.log('[CHAT API] Project created/updated')
+        }
+
+        // Log checkpoint advancement event
+        await query(
+          `INSERT INTO events (student_id, event_type, event_data)
+           VALUES ($1, $2, $3)`,
+          [student.id, 'checkpoint_completed', JSON.stringify({
+            checkpoint: student.current_checkpoint,
+            newCheckpoint: nextCheckpoint.name,
+            extractedData: response.extractedData
+          })]
+        )
+
+        checkpointAdvanced = true
+        newCheckpoint = nextCheckpoint.name
+        console.log('[CHAT API] Checkpoint advancement complete!')
+      }
+    }
+
     console.log('[CHAT API] Request completed successfully')
     return NextResponse.json({
       message: response.message,
-      checkpointAdvanced: false, // Simplified for now
-      newCheckpoint: null
+      checkpointAdvanced,
+      newCheckpoint
     })
 
   } catch (error: any) {
