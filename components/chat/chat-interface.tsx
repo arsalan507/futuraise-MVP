@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input'
 interface Message {
   role: 'user' | 'assistant'
   content: string
-  timestamp: Date
+  timestamp: Date | string
 }
 
 interface ChatInterfaceProps {
@@ -39,10 +39,7 @@ export function ChatInterface({ studentId, checkpoint, initialMessages, onMessag
         // If we have existing messages, use them
         if (initialMessages && initialMessages.length > 0) {
           console.log('Loading existing conversation:', initialMessages.length, 'messages')
-          setMessages(initialMessages.map(msg => ({
-            ...msg,
-            timestamp: new Date(msg.timestamp)
-          })))
+          setMessages(initialMessages)
           setInitialLoading(false)
           return
         }
@@ -178,7 +175,10 @@ export function ChatInterface({ studentId, checkpoint, initialMessages, onMessag
             >
               <p className="whitespace-pre-wrap">{message.content}</p>
               <p className={`text-xs mt-1 ${message.role === 'user' ? 'text-blue-100' : 'text-gray-500'}`}>
-                {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                {typeof message.timestamp === 'string'
+                  ? new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                  : message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                }
               </p>
             </div>
           </div>
