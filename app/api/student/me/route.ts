@@ -39,6 +39,18 @@ export async function GET(request: NextRequest) {
 
     const student = studentResult.rows[0]
 
+    // Get conversation history for current checkpoint
+    const conversationResult = await query(
+      `SELECT messages, context FROM conversations
+       WHERE student_id = $1 AND checkpoint = $2
+       ORDER BY created_at DESC LIMIT 1`,
+      [student.id, student.current_checkpoint]
+    )
+
+    const conversation = conversationResult.rows[0]
+    const messages = conversation?.messages || []
+    const context = conversation?.context || {}
+
     return NextResponse.json({
       success: true,
       student: {
@@ -57,6 +69,10 @@ export async function GET(request: NextRequest) {
         build_progress: student.build_progress,
         created_at: student.created_at,
         updated_at: student.updated_at,
+      },
+      conversation: {
+        messages: messages,
+        context: context
       }
     })
 

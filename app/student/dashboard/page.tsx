@@ -28,9 +28,16 @@ interface Student {
   updated_at: string
 }
 
+interface Message {
+  role: 'user' | 'assistant'
+  content: string
+  timestamp: string
+}
+
 export default function StudentDashboard() {
   const router = useRouter()
   const [student, setStudent] = useState<Student | null>(null)
+  const [conversationMessages, setConversationMessages] = useState<Message[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [mounted, setMounted] = useState(false)
@@ -78,7 +85,9 @@ export default function StudentDashboard() {
 
         const data = await response.json()
         console.log('Student data loaded:', data.student)
+        console.log('Conversation messages:', data.conversation?.messages?.length || 0)
         setStudent(data.student)
+        setConversationMessages(data.conversation?.messages || [])
       } catch (err: any) {
         console.error('Error loading student data:', err)
         setError(err.message || 'An error occurred')
@@ -187,6 +196,7 @@ export default function StudentDashboard() {
               <ChatInterface
                 studentId={student.id}
                 checkpoint={student.current_checkpoint}
+                initialMessages={conversationMessages}
                 onMessageSent={(message) => {
                   console.log('Message sent:', message)
                 }}

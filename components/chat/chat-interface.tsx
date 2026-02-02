@@ -13,10 +13,11 @@ interface Message {
 interface ChatInterfaceProps {
   studentId: string
   checkpoint: string
+  initialMessages?: Message[]
   onMessageSent?: (message: string) => void
 }
 
-export function ChatInterface({ studentId, checkpoint, onMessageSent }: ChatInterfaceProps) {
+export function ChatInterface({ studentId, checkpoint, initialMessages, onMessageSent }: ChatInterfaceProps) {
   const [messages, setMessages] = useState<Message[]>([])
   const [initialLoading, setInitialLoading] = useState(true)
   const [inputValue, setInputValue] = useState('')
@@ -31,10 +32,22 @@ export function ChatInterface({ studentId, checkpoint, onMessageSent }: ChatInte
     scrollToBottom()
   }, [messages])
 
-  // Load initial message from API
+  // Load initial messages
   useEffect(() => {
     async function loadInitialMessage() {
       try {
+        // If we have existing messages, use them
+        if (initialMessages && initialMessages.length > 0) {
+          console.log('Loading existing conversation:', initialMessages.length, 'messages')
+          setMessages(initialMessages.map(msg => ({
+            ...msg,
+            timestamp: new Date(msg.timestamp)
+          })))
+          setInitialLoading(false)
+          return
+        }
+
+        // Otherwise, fetch welcome message
         const response = await fetch('/api/chat')
         if (response.ok) {
           const data = await response.json()
@@ -57,7 +70,7 @@ export function ChatInterface({ studentId, checkpoint, onMessageSent }: ChatInte
       }
     }
     loadInitialMessage()
-  }, [])
+  }, [initialMessages])
 
   const handleSendMessage = async () => {
     if (!inputValue.trim() || isLoading) return
