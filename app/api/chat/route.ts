@@ -98,6 +98,7 @@ export async function POST(request: NextRequest) {
       studentName: student.name,
       grade: student.grade,
       currentCheckpoint: student.current_checkpoint,
+      currentWeek: 1, // Default to week 1 for now
       targetPerson: project?.target_person || conversationContext?.targetPerson,
       problemStatement: project?.problem_statement || conversationContext?.problemStatement,
       problemDescription: project?.problem_description || conversationContext?.problemDescription,
