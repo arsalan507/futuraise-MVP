@@ -22,6 +22,8 @@ export function ChatInterface({ studentId, checkpoint, initialMessages, onMessag
   const [initialLoading, setInitialLoading] = useState(true)
   const [inputValue, setInputValue] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  const [showCelebration, setShowCelebration] = useState(false)
+  const [newCheckpointName, setNewCheckpointName] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const scrollToBottom = () => {
@@ -113,10 +115,17 @@ export function ChatInterface({ studentId, checkpoint, initialMessages, onMessag
 
       setMessages(prev => [...prev, assistantMessage])
 
-      // If checkpoint advanced, could show celebration animation here
+      // If checkpoint advanced, show celebration
       if (data.checkpointAdvanced) {
         console.log('Checkpoint advanced to:', data.newCheckpoint)
-        // Optional: Add celebration UI
+        setNewCheckpointName(data.newCheckpoint)
+        setShowCelebration(true)
+        // Auto-hide after 5 seconds
+        setTimeout(() => {
+          setShowCelebration(false)
+          // Reload page to update checkpoint and progress
+          window.location.reload()
+        }, 5000)
       }
 
     } catch (error) {
@@ -140,7 +149,18 @@ export function ChatInterface({ studentId, checkpoint, initialMessages, onMessag
   }
 
   return (
-    <div className="flex flex-col h-full bg-white rounded-xl shadow-lg">
+    <div className="flex flex-col h-full bg-white rounded-xl shadow-lg relative">
+      {/* Celebration Overlay */}
+      {showCelebration && (
+        <div className="absolute inset-0 bg-gradient-to-br from-blue-500/95 to-purple-600/95 z-50 flex items-center justify-center rounded-xl">
+          <div className="text-center text-white animate-bounce">
+            <div className="text-6xl mb-4">🎉</div>
+            <h2 className="text-3xl font-bold mb-2">Checkpoint Complete!</h2>
+            <p className="text-xl">Moving forward...</p>
+          </div>
+        </div>
+      )}
+
       {/* Chat Header */}
       <div className="p-4 border-b-2 border-gray-100">
         <div className="flex items-center gap-3">
