@@ -1,224 +1,149 @@
 // Chat API Route - Handles messages to/from Claude (Max)
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import jwt from 'jsonwebtoken'
+import { query } from '@/lib/db'
 import { chatWithMax, type StudentContext, type Message } from '@/lib/claude/chat-service'
-import { getNextCheckpoint, getCurrentWeek } from '@/lib/checkpoints/checkpoint-manager'
 
+const JWT_SECRET = process.env.JWT_SECRET || 'futuraise-secret-key-change-in-production'
+
+// GET - Return initial welcome message
+export async function GET(request: NextRequest) {
+  return NextResponse.json({
+    message: "Hey! I'm Max, your AI building buddy! 👋\n\nOver the next 3 weeks, we're going to build something EPIC - an AI tool that solves a real problem for someone you care about.\n\nReady to get started?"
+  })
+}
+
+// POST - Handle chat messages
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient()
-
-    // Get authenticated user
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-
-    if (authError || !user) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      )
+    // Get and verify JWT token
+    const authHeader = request.headers.get('authorization')
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Parse request body
-    const { message } = await request.json()
+    const token = authHeader.substring(7)
+    let decoded: any
+    try {
+      decoded = jwt.verify(token, JWT_SECRET)
+    } catch (err) {
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+    }
 
-    if (!message || typeof message !== 'string') {
-      return NextResponse.json(
-        { error: 'Message is required' },
-        { status: 400 }
-      )
+    const userId = decoded.userId
+
+    // Parse request body
+    const { message: userMessage } = await request.json()
+
+    if (!userMessage || typeof userMessage !== 'string') {
+      return NextResponse.json({ error: 'Message is required' }, { status: 400 })
     }
 
     // Get student data
-    const { data: student, error: studentError } = await supabase
-      .from('students')
-      .select('*')
-      .eq('id', user.id)
-      .single()
+    const studentResult = await query(
+      `SELECT s.*, u.email
+       FROM students s
+       JOIN auth.users u ON u.id = s.user_id
+       WHERE s.user_id = $1`,
+      [userId]
+    )
 
-    if (studentError || !student) {
-      return NextResponse.json(
-        { error: 'Student not found' },
-        { status: 404 }
-      )
+    if (studentResult.rows.length === 0) {
+      return NextResponse.json({ error: 'Student not found' }, { status: 404 })
     }
 
+    const student = studentResult.rows[0]
+
     // Get or create conversation for current checkpoint
-    let { data: conversation, error: convError } = await supabase
-      .from('conversations')
-      .select('*')
-      .eq('student_id', user.id)
-      .eq('checkpoint', student.current_checkpoint)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .single()
+    let conversationResult = await query(
+      `SELECT * FROM conversations
+       WHERE student_id = $1 AND checkpoint = $2
+       ORDER BY created_at DESC LIMIT 1`,
+      [student.id, student.current_checkpoint]
+    )
 
-    if (convError || !conversation) {
+    let conversation = conversationResult.rows[0]
+
+    if (!conversation) {
       // Create new conversation
-      const { data: newConv, error: createError } = await supabase
-        .from('conversations')
-        .insert({
-          student_id: user.id,
-          checkpoint: student.current_checkpoint,
-          messages: [],
-          context: {}
-        })
-        .select()
-        .single()
-
-      if (createError) {
-        console.error('Error creating conversation:', createError)
-        return NextResponse.json(
-          { error: 'Failed to create conversation' },
-          { status: 500 }
-        )
-      }
-      conversation = newConv
+      const newConvResult = await query(
+        `INSERT INTO conversations (student_id, checkpoint, messages, context)
+         VALUES ($1, $2, $3, $4)
+         RETURNING *`,
+        [student.id, student.current_checkpoint, JSON.stringify([]), JSON.stringify({})]
+      )
+      conversation = newConvResult.rows[0]
     }
 
     // Get project data if exists
-    const { data: project } = await supabase
-      .from('projects')
-      .select('*')
-      .eq('student_id', user.id)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .single()
+    const projectResult = await query(
+      `SELECT * FROM projects
+       WHERE student_id = $1
+       ORDER BY created_at DESC LIMIT 1`,
+      [student.id]
+    )
+    const project = projectResult.rows[0]
 
     // Build context for Claude
+    const conversationHistory = typeof conversation.messages === 'string'
+      ? JSON.parse(conversation.messages)
+      : conversation.messages || []
+
+    const conversationContext = typeof conversation.context === 'string'
+      ? JSON.parse(conversation.context)
+      : conversation.context || {}
+
     const context: StudentContext = {
-      studentId: user.id,
+      studentId: student.id,
       studentName: student.name,
       grade: student.grade,
       currentCheckpoint: student.current_checkpoint,
-      currentWeek: student.current_week,
-      targetPerson: project?.target_person || conversation?.context?.targetPerson,
-      problemStatement: project?.problem_statement || conversation?.context?.problemStatement,
-      problemDescription: project?.problem_description || conversation?.context?.problemDescription,
-      solutionType: project?.solution_type || conversation?.context?.solutionType,
-      toolsUsed: project?.tools_used || conversation?.context?.toolsUsed,
-      buildProgress: project?.status || conversation?.context?.buildProgress,
-      conversationHistory: (conversation?.messages || []) as Message[]
+      targetPerson: project?.target_person || conversationContext?.targetPerson,
+      problemStatement: project?.problem_statement || conversationContext?.problemStatement,
+      problemDescription: project?.problem_description || conversationContext?.problemDescription,
+      solutionType: project?.solution_type || conversationContext?.solutionType,
+      toolsUsed: project?.tools_used || conversationContext?.toolsUsed,
+      buildProgress: project?.status || conversationContext?.buildProgress,
+      conversationHistory: conversationHistory as Message[]
     }
 
     // Get response from Claude
-    const response = await chatWithMax(message, context)
+    const response = await chatWithMax(userMessage, context)
 
     // Update conversation with new messages
     const updatedMessages = [
-      ...(conversation?.messages || []),
-      { role: 'user', content: message, timestamp: new Date().toISOString() },
+      ...conversationHistory,
+      { role: 'user', content: userMessage, timestamp: new Date().toISOString() },
       { role: 'assistant', content: response.message, timestamp: new Date().toISOString() }
     ]
 
     // Update context with extracted data
     const updatedContext = {
-      ...(conversation?.context || {}),
+      ...conversationContext,
       ...response.extractedData
     }
 
-    await supabase
-      .from('conversations')
-      .update({
-        messages: updatedMessages,
-        context: updatedContext,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', conversation.id)
+    await query(
+      `UPDATE conversations
+       SET messages = $1, context = $2, updated_at = NOW()
+       WHERE id = $3`,
+      [JSON.stringify(updatedMessages), JSON.stringify(updatedContext), conversation.id]
+    )
 
     // Log event
-    await supabase.from('events').insert({
-      student_id: user.id,
-      event_type: 'chat_message',
-      event_data: {
+    await query(
+      `INSERT INTO events (student_id, event_type, event_data)
+       VALUES ($1, $2, $3)`,
+      [student.id, 'chat_message', JSON.stringify({
         checkpoint: student.current_checkpoint,
-        messageLength: message.length
-      }
-    })
-
-    // Handle checkpoint advancement
-    if (response.shouldAdvanceCheckpoint) {
-      const nextCheckpoint = getNextCheckpoint(student.current_checkpoint)
-
-      if (nextCheckpoint) {
-        // Update student's current checkpoint
-        await supabase
-          .from('students')
-          .update({
-            current_checkpoint: nextCheckpoint.name,
-            current_week: getCurrentWeek(nextCheckpoint.name),
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', user.id)
-
-        // Mark current checkpoint as completed
-        await supabase
-          .from('checkpoints')
-          .upsert({
-            student_id: user.id,
-            checkpoint_name: student.current_checkpoint,
-            week: student.current_week,
-            status: 'completed',
-            completed_at: new Date().toISOString(),
-            data: response.extractedData
-          }, {
-            onConflict: 'student_id,checkpoint_name'
-          })
-
-        // Create or update project with extracted data
-        if (response.extractedData) {
-          const projectUpdate: Record<string, any> = {}
-
-          if (response.extractedData.targetPerson) {
-            projectUpdate.target_person = response.extractedData.targetPerson
-          }
-          if (response.extractedData.problemDescription) {
-            projectUpdate.problem_description = response.extractedData.problemDescription
-          }
-          if (response.extractedData.solutionType) {
-            projectUpdate.solution_type = response.extractedData.solutionType
-          }
-          if (response.extractedData.primaryTool) {
-            projectUpdate.tools_used = [response.extractedData.primaryTool]
-          }
-
-          if (Object.keys(projectUpdate).length > 0) {
-            if (project) {
-              await supabase
-                .from('projects')
-                .update(projectUpdate)
-                .eq('id', project.id)
-            } else {
-              await supabase
-                .from('projects')
-                .insert({
-                  student_id: user.id,
-                  title: `AI Solution for ${response.extractedData.targetPerson || 'Someone'}`,
-                  problem_statement: response.extractedData.problemDescription || 'To be defined',
-                  ...projectUpdate
-                })
-            }
-          }
-        }
-
-        // Log checkpoint completion event
-        await supabase.from('events').insert({
-          student_id: user.id,
-          event_type: 'checkpoint_completed',
-          event_data: {
-            checkpoint: student.current_checkpoint,
-            nextCheckpoint: nextCheckpoint.name,
-            extractedData: response.extractedData
-          }
-        })
-      }
-    }
+        messageLength: userMessage.length
+      })]
+    )
 
     return NextResponse.json({
       message: response.message,
-      checkpointAdvanced: response.shouldAdvanceCheckpoint,
-      newCheckpoint: response.shouldAdvanceCheckpoint
-        ? getNextCheckpoint(student.current_checkpoint)?.name
-        : null
+      checkpointAdvanced: false, // Simplified for now
+      newCheckpoint: null
     })
 
   } catch (error) {

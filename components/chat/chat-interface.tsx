@@ -76,11 +76,15 @@ export function ChatInterface({ studentId, checkpoint, onMessageSent }: ChatInte
     onMessageSent?.(messageToSend)
 
     try {
+      // Get JWT token from localStorage
+      const token = localStorage.getItem('authToken')
+
       // Call the real Claude API
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
         },
         body: JSON.stringify({ message: messageToSend }),
       })
