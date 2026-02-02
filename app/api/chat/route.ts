@@ -55,6 +55,7 @@ export async function POST(request: NextRequest) {
     const student = studentResult.rows[0]
 
     // Get or create conversation for current checkpoint
+    console.log('[CHAT API] Looking for conversation:', { studentId: student.id, checkpoint: student.current_checkpoint })
     let conversationResult = await query(
       `SELECT * FROM conversations
        WHERE student_id = $1 AND checkpoint = $2
@@ -63,9 +64,11 @@ export async function POST(request: NextRequest) {
     )
 
     let conversation = conversationResult.rows[0]
+    console.log('[CHAT API] Found conversation:', conversation ? conversation.id : 'NONE')
 
     if (!conversation) {
       // Create new conversation
+      console.log('[CHAT API] Creating new conversation...')
       const newConvResult = await query(
         `INSERT INTO conversations (student_id, checkpoint, messages, context)
          VALUES ($1, $2, $3, $4)
@@ -73,6 +76,7 @@ export async function POST(request: NextRequest) {
         [student.id, student.current_checkpoint, JSON.stringify([]), JSON.stringify({})]
       )
       conversation = newConvResult.rows[0]
+      console.log('[CHAT API] Created conversation:', conversation.id)
     }
 
     // Get project data if exists
@@ -109,7 +113,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Get response from Claude
+    console.log('[CHAT API] Calling Claude with message:', userMessage.substring(0, 50))
     const response = await chatWithMax(userMessage, context)
+    console.log('[CHAT API] Got Claude response:', response.message.substring(0, 50))
 
     // Update conversation with new messages
     const updatedMessages = [
@@ -124,14 +130,24 @@ export async function POST(request: NextRequest) {
       ...response.extractedData
     }
 
-    await query(
+    console.log('[CHAT API] Updating conversation:', {
+      conversationId: conversation.id,
+      messageCount: updatedMessages.length,
+      contextKeys: Object.keys(updatedContext)
+    })
+
+    const updateResult = await query(
       `UPDATE conversations
        SET messages = $1, context = $2, updated_at = NOW()
-       WHERE id = $3`,
+       WHERE id = $3
+       RETURNING id`,
       [JSON.stringify(updatedMessages), JSON.stringify(updatedContext), conversation.id]
     )
 
+    console.log('[CHAT API] Conversation updated:', updateResult.rows[0]?.id ? 'SUCCESS' : 'FAILED')
+
     // Log event
+    console.log('[CHAT API] Logging event...')
     await query(
       `INSERT INTO events (student_id, event_type, event_data)
        VALUES ($1, $2, $3)`,
@@ -140,17 +156,23 @@ export async function POST(request: NextRequest) {
         messageLength: userMessage.length
       })]
     )
+    console.log('[CHAT API] Event logged')
 
+    console.log('[CHAT API] Request completed successfully')
     return NextResponse.json({
       message: response.message,
       checkpointAdvanced: false, // Simplified for now
       newCheckpoint: null
     })
 
-  } catch (error) {
-    console.error('Chat API Error:', error)
+  } catch (error: any) {
+    console.error('[CHAT API] Error occurred:', {
+      message: error.message,
+      stack: error.stack,
+      name: error.name
+    })
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: 'Internal server error', details: error.message },
       { status: 500 }
     )
   }
