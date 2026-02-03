@@ -7,6 +7,67 @@ import { getNextCheckpoint, getCurrentWeek } from '@/lib/checkpoints/checkpoint-
 
 const JWT_SECRET = process.env.JWT_SECRET || 'futuraise-secret-key-change-in-production'
 
+// Helper function to check if student needs intervention
+async function checkForIntervention(
+  student: any,
+  userMessage: string,
+  conversationHistory: Message[],
+  checkpoint: string
+) {
+  try {
+    // Check for explicit help requests
+    const helpKeywords = ['stuck', 'confused', 'help', "don't understand", "i'm lost", 'not sure']
+    const needsHelp = helpKeywords.some(keyword => userMessage.toLowerCase().includes(keyword))
+
+    // Count messages at current checkpoint
+    const messagesAtCheckpoint = conversationHistory.length
+
+    // Detect if student has been stuck too long (10+ messages without progress)
+    const stuckTooLong = messagesAtCheckpoint >= 10
+
+    if (needsHelp || stuckTooLong) {
+      // Check if intervention already exists
+      const existingIntervention = await query(
+        `SELECT id FROM interventions
+         WHERE student_id = $1 AND checkpoint = $2 AND status = 'pending'
+         LIMIT 1`,
+        [student.id, checkpoint]
+      )
+
+      if (existingIntervention.rows.length === 0) {
+        // Create intervention record
+        const reason = needsHelp
+          ? 'Student explicitly requested help'
+          : `Stuck at checkpoint for ${messagesAtCheckpoint} messages`
+
+        await query(
+          `INSERT INTO interventions (student_id, checkpoint, reason, context)
+           VALUES ($1, $2, $3, $4)`,
+          [
+            student.id,
+            checkpoint,
+            reason,
+            JSON.stringify({
+              messageCount: messagesAtCheckpoint,
+              lastMessage: userMessage.substring(0, 200),
+              helpKeywordsDetected: needsHelp
+            })
+          ]
+        )
+
+        console.log('[INTERVENTION] Created intervention:', {
+          studentId: student.id,
+          checkpoint,
+          reason
+        })
+      }
+    }
+  } catch (error) {
+    console.error('[INTERVENTION] Error checking for intervention:', error)
+    // Don't fail the whole request if intervention check fails
+  }
+}
+
 // GET - Return initial welcome message
 export async function GET(request: NextRequest) {
   return NextResponse.json({
@@ -158,6 +219,9 @@ export async function POST(request: NextRequest) {
       })]
     )
     console.log('[CHAT API] Event logged')
+
+    // Check for intervention needs
+    await checkForIntervention(student, userMessage, conversationHistory, student.current_checkpoint)
 
     // Handle checkpoint advancement
     let checkpointAdvanced = false
