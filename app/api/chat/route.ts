@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import jwt from 'jsonwebtoken'
 import { query } from '@/lib/db'
 import { chatWithMax, type StudentContext, type Message } from '@/lib/claude/chat-service'
-import { getNextCheckpoint } from '@/lib/checkpoints/checkpoint-manager'
+import { getNextCheckpoint, getCurrentWeek } from '@/lib/checkpoints/checkpoint-manager'
 
 const JWT_SECRET = process.env.JWT_SECRET || 'futuraise-secret-key-change-in-production'
 
@@ -103,7 +103,7 @@ export async function POST(request: NextRequest) {
       studentName: student.name,
       grade: student.grade,
       currentCheckpoint: student.current_checkpoint,
-      currentWeek: 1, // Default to week 1 for now
+      currentWeek: getCurrentWeek(student.current_checkpoint),
       targetPerson: project?.target_person || conversationContext?.targetPerson,
       problemStatement: project?.problem_statement || conversationContext?.problemStatement,
       problemDescription: project?.problem_description || conversationContext?.problemDescription,

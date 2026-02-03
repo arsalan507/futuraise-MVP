@@ -1,6 +1,6 @@
 'use client'
 
-import { CHECKPOINTS, getCheckpointStatus } from '@/lib/checkpoints/checkpoint-manager'
+import { CHECKPOINTS, getCheckpointStatus, getCurrentWeek } from '@/lib/checkpoints/checkpoint-manager'
 import { Check, Lock, Circle } from 'lucide-react'
 
 interface ProgressTrackerProps {
@@ -13,6 +13,8 @@ export function ProgressTracker({ currentCheckpoint }: ProgressTrackerProps) {
     status: getCheckpointStatus(cp.name, currentCheckpoint)
   }))
 
+  const currentWeek = getCurrentWeek(currentCheckpoint)
+
   // Group by week
   const weeks = [1, 2, 3]
 
@@ -24,11 +26,20 @@ export function ProgressTracker({ currentCheckpoint }: ProgressTrackerProps) {
         {weeks.map(week => {
           const weekCheckpoints = checkpointsWithStatus.filter(cp => cp.week === week)
 
+          const isCurrentWeek = week === currentWeek
+          const isCompletedWeek = week < currentWeek
+
           return (
             <div key={week}>
               <div className="flex items-center gap-2 mb-4">
-                <div className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-semibold">
-                  Week {week}
+                <div className={`px-3 py-1 rounded-full text-sm font-semibold ${
+                  isCurrentWeek
+                    ? 'bg-blue-500 text-white'
+                    : isCompletedWeek
+                    ? 'bg-green-100 text-green-800'
+                    : 'bg-gray-100 text-gray-600'
+                }`}>
+                  Week {week} {isCurrentWeek && '← Current'}
                 </div>
                 <div className="flex-1 h-0.5 bg-gray-200"></div>
               </div>
