@@ -63,6 +63,18 @@ export default function HomePage() {
             </p>
             <p className="font-semibold">- Parent of Grade 7 student</p>
           </div>
+
+          {/* Portal Links */}
+          <div className="mt-12 pt-8 border-t border-gray-200">
+            <div className="flex gap-6 justify-center text-sm">
+              <Link href="/parent/login" className="text-green-600 hover:text-green-700 font-medium">
+                Parent Portal →
+              </Link>
+              <Link href="/admin/login" className="text-purple-600 hover:text-purple-700 font-medium">
+                Admin Portal →
+              </Link>
+            </div>
+          </div>
         </div>
       </div>
     </div>
